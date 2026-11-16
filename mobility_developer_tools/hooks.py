@@ -264,3 +264,27 @@ app_license = "mit"
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
 
+
+# Apps screen
+# ------------------
+add_to_apps_screen = [
+	{
+		"name": "mobility_developer_tools",
+		"logo": "/assets/mobility_developer_tools/images/logo.svg",
+		"title": "Developer Tools",
+		# Not "/app/developer-studio": the apps screen treats every "/app/<x>" route as a
+		# workspace and falls back to the first workspace (Home) when <x> is not one.
+		"route": "/developer-studio",
+		"has_permission": "mobility_developer_tools.studio.api.has_app_permission",
+	}
+]
+
+website_redirects = [
+	{"source": "/developer-studio", "target": "/app/developer-studio"},
+]
+
+# Developer Studio
+# ------------------
+# Other apps can add script runners (subclasses of
+# mobility_developer_tools.studio.runners.base.ScriptRunner):
+# developer_studio_runners = ["my_app.studio.MyRunner"]
