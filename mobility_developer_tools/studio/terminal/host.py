@@ -30,6 +30,7 @@ from mobility_developer_tools.studio.terminal.publisher import OutputPublisher
 
 FLUSH_INTERVAL = 0.015
 FLUSH_BYTES = 32 * 1024
+IDLE_WAIT = 0.05  # select timeout when nothing is pending
 
 
 class PtyTerminalHost:
@@ -108,7 +109,9 @@ class PtyTerminalHost:
 		last_heartbeat = 0.0
 
 		while not self.stop.is_set():
-			readable, _, _ = select.select([self.fd], [], [], 0.05)
+			# with output pending, only wait for the rest of the batching window (keeps typing snappy)
+			wait = max(0.0, FLUSH_INTERVAL - (time.monotonic() - first_at)) if pending else IDLE_WAIT
+			readable, _, _ = select.select([self.fd], [], [], wait)
 			if readable:
 				try:
 					chunk = os.read(self.fd, 65536)

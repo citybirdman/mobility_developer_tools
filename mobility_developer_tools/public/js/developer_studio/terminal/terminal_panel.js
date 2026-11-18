@@ -2,7 +2,13 @@ import { notifyError } from "../core/api_client";
 import { TerminalSession } from "./terminal_session";
 
 const KEEPALIVE_MS = 30 * 1000;
-const KIND_ICONS = { shell: "terminal", ai: "sparkle", install: "cloud-download" };
+const KIND_ICONS = {
+	shell: "terminal",
+	ai: "sparkle",
+	install: "cloud-download",
+	bench: "tools",
+	console: "debug-console",
+};
 
 /**
  * Bottom panel holding several terminal sessions (tabs).
@@ -12,13 +18,14 @@ const KIND_ICONS = { shell: "terminal", ai: "sparkle", install: "cloud-download"
  *   terminal:launch {method, args, maximize, banner}   -> any server endpoint returning terminal meta
  */
 export class TerminalPanel {
-	constructor(host, { api, bus, theme = "dark" }) {
+	constructor(host, { api, bus, contextMenu, theme = "dark" }) {
 		this.api = api;
 		this.bus = bus;
+		this.menu = contextMenu;
 		this.theme = theme;
-		bus.on("theme:changed", (mode) => {
-			this.theme = mode;
-			this.sessions.forEach((s) => s.setTheme(mode));
+		bus.on("appearance:changed", ({ terminalTheme }) => {
+			this.theme = terminalTheme;
+			this.sessions.forEach((s) => s.setTheme(terminalTheme));
 		});
 		this.sessions = [];
 		this.active = null;
@@ -103,13 +110,36 @@ export class TerminalPanel {
 		const session = new TerminalSession(this.body, this.api, meta, {
 			banner,
 			theme: this.theme,
-			onExit: (s) => setTimeout(() => this.remove(s), meta.kind === "shell" ? 1500 : 4000),
+			onContextMenu: (s, e) => this.showMenu(s, e),
+			onExit: (s) => this.onExit(s),
 		});
 		session.show(false);
 		this.sessions.push(session);
 		if (!this.active) this.activate(session);
 		this.render();
 		return session;
+	}
+
+	/** Shells close themselves; command / tool tabs stay so their output can be read. */
+	onExit(session) {
+		if (session.meta.kind === "shell") setTimeout(() => this.remove(session), 1500);
+		else this.render();
+		if (session.meta.kind === "install") this.bus.emit("ai:refresh");
+	}
+
+	showMenu(session, event) {
+		if (!this.menu) return;
+		this.activate(session);
+		this.menu.show(event.clientX, event.clientY, [
+			{ label: __("Copy"), icon: "copy", shortcut: "Ctrl+C", action: () => session.copy() },
+			{ label: __("Paste"), icon: "clippy", shortcut: "Ctrl+V", action: () => session.paste() },
+			{ label: __("Select All"), icon: "list-selection", shortcut: "Ctrl+Shift+A", action: () => session.selectAll() },
+			"-",
+			{ label: __("Clear"), icon: "clear-all", action: () => session.clear() },
+			session.exited
+				? { label: __("Close"), icon: "close", action: () => this.remove(session) }
+				: { label: __("Kill"), icon: "trash", danger: true, action: () => session.kill() },
+		]);
 	}
 
 	remove(session) {
@@ -120,7 +150,6 @@ export class TerminalPanel {
 			if (this.sessions.length) this.activate(this.sessions[this.sessions.length - 1]);
 		}
 		this.render();
-		if (session.meta.kind === "install") this.bus.emit("ai:refresh");
 	}
 
 	activate(session) {
@@ -164,7 +193,10 @@ export class TerminalPanel {
 		this.tabsEl.innerHTML = "";
 		for (const session of this.sessions) {
 			const tab = document.createElement("div");
-			tab.className = `mdt-term-tab kind-${session.meta.kind}` + (session === this.active ? " active" : "");
+			tab.className =
+				`mdt-term-tab kind-${session.meta.kind}` +
+				(session === this.active ? " active" : "") +
+				(session.exited ? " exited" : "");
 			tab.innerHTML = `<span class="codicon codicon-${KIND_ICONS[session.meta.kind] || "terminal"}"></span><span></span>
 				<span class="codicon codicon-close" title="${__("Kill Terminal")}"></span>`;
 			tab.children[1].textContent = session.meta.label;

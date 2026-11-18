@@ -1,4 +1,5 @@
 import { notifyError } from "../core/api_client";
+import { copyText, readClipboard, terminalKeyAction } from "./terminal_keys";
 import { TerminalTransport } from "./terminal_transport";
 import { WrappedLinkProvider } from "./wrapped_link_provider";
 
@@ -52,6 +53,8 @@ const LIGHT_THEME = {
 
 export const TERMINAL_THEMES = { dark: DARK_THEME, light: LIGHT_THEME };
 
+const resolveTheme = (theme) => (typeof theme === "string" ? TERMINAL_THEMES[theme] || DARK_THEME : theme || DARK_THEME);
+
 /** Opens http(s) links in a new browser tab (never javascript: or other schemes). */
 export function openExternal(uri) {
 	try {
@@ -64,7 +67,7 @@ export function openExternal(uri) {
 
 /** One xterm.js view bound to one PTY on the server. */
 export class TerminalSession {
-	constructor(container, api, meta, { onExit, banner, theme = "dark" }) {
+	constructor(container, api, meta, { onExit, onContextMenu, banner, theme = "dark" }) {
 		this.meta = meta;
 		this.id = meta.id;
 		this.exited = false;
@@ -82,7 +85,9 @@ export class TerminalSession {
 			lineHeight: 1.2,
 			scrollback: 5000,
 			allowProposedApi: false,
-			theme: TERMINAL_THEMES[theme] || DARK_THEME,
+			theme: resolveTheme(theme),
+			macOptionIsMeta: true, // Alt+B / Alt+F word jumps on macOS
+			rightClickSelectsWord: false, // right click opens the studio menu
 			// OSC 8 hyperlinks (CLIs print the full URL this way even when the text wraps)
 			linkHandler: { activate: (event, uri) => openExternal(uri), allowNonHttpProtocols: false },
 		});
@@ -104,6 +109,11 @@ export class TerminalSession {
 		this.term.onData((data) => this.transport.send(data));
 		this.term.onResize(({ cols, rows }) => this.transport.resize(cols, rows));
 
+		this.el.addEventListener("contextmenu", (e) => {
+			e.preventDefault();
+			onContextMenu?.(this, e);
+		});
+
 		this.resizeObserver = new ResizeObserver(() => this.fitNow());
 		this.resizeObserver.observe(this.el);
 		this.transport.fetchBacklog();
@@ -112,21 +122,66 @@ export class TerminalSession {
 	installClipboardKeys() {
 		this.term.attachCustomKeyEventHandler((e) => {
 			if (e.type !== "keydown") return true;
-			const key = e.key.toLowerCase();
-			if (e.ctrlKey && e.shiftKey && key === "c") {
-				navigator.clipboard?.writeText(this.term.getSelection());
-				return false;
+			switch (terminalKeyAction(e, this.term.hasSelection())) {
+				case "native-paste":
+					return false; // xterm ignores the key; the browser's paste event reaches xterm
+				case "copy":
+					e.preventDefault();
+					this.copy();
+					return false;
+				case "select-all":
+					e.preventDefault();
+					this.term.selectAll();
+					return false;
+				default:
+					return true;
 			}
-			if (e.ctrlKey && e.shiftKey && key === "v") {
-				navigator.clipboard?.readText().then((text) => text && this.transport.send(text));
-				return false;
-			}
-			return true;
 		});
 	}
 
-	setTheme(mode) {
-		this.term.options.theme = TERMINAL_THEMES[mode] || DARK_THEME;
+	copy() {
+		return copyText(this.term.getSelection());
+	}
+
+	paste() {
+		return readClipboard().then(
+			(text) => text && this.term.paste(text),
+			() =>
+				frappe.show_alert(
+					{ message: __("Use Ctrl+V to paste (the browser only allows menu paste on HTTPS)"), indicator: "orange" },
+					5
+				)
+		);
+	}
+
+	selectAll() {
+		this.term.selectAll();
+	}
+
+	clear() {
+		this.term.clear();
+	}
+
+	/** Visible text of the terminal (last screen), used to detect prompts. */
+	bufferText(maxLines = 50) {
+		const buffer = this.term.buffer.active;
+		const end = buffer.baseY + buffer.cursorY;
+		const lines = [];
+		for (let i = Math.max(0, end - maxLines); i <= end; i++) lines.push(buffer.getLine(i)?.translateToString(true) || "");
+		return lines.join("\n");
+	}
+
+	hasSelection() {
+		return this.term.hasSelection();
+	}
+
+	focus() {
+		this.term.focus();
+	}
+
+	/** `theme` is a mode ("dark" / "light") or a full xterm theme object (from an extension theme). */
+	setTheme(theme) {
+		this.term.options.theme = resolveTheme(theme);
 	}
 
 	fitNow() {

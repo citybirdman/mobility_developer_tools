@@ -13,12 +13,13 @@ export class StudioApiError extends Error {
 }
 
 /**
- * Talks to the backend. The studio token lives only in memory (never in storage)
- * and is sent in a header, so a page reload always asks for the password again.
+ * Talks to the backend. The studio token is sent in a header; it is remembered by
+ * an optional TokenStore so the password is only asked on first entry.
  */
 export class StudioApi {
-	constructor() {
-		this.token = null;
+	constructor({ tokenStore = null } = {}) {
+		this.tokenStore = tokenStore;
+		this.token = tokenStore?.get() || null;
 		this.lockListeners = new Set();
 	}
 
@@ -28,6 +29,7 @@ export class StudioApi {
 
 	setToken(token) {
 		this.token = token;
+		this.tokenStore?.set(token);
 	}
 
 	async call(method, args = {}) {
@@ -65,7 +67,7 @@ export class StudioApi {
 			response.status
 		);
 		if (error.isLocked) {
-			this.token = null;
+			this.setToken(null);
 			this.lockListeners.forEach((fn) => fn());
 		}
 		throw error;

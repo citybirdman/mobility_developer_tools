@@ -29,10 +29,6 @@ class TerminalManager:
 	def create(
 		self, user: str, cwd: str, cols: int = 120, rows: int = 30, launch: LaunchSpec | None = None
 	) -> dict:
-		active = self.list_for(user)
-		if len(active) >= self._config.max_terminals:
-			frappe.throw(_("You can open at most {0} terminals").format(self._config.max_terminals))
-
 		launch = launch or LaunchSpec()
 		term_id = frappe.generate_hash(length=16)
 		meta = {
@@ -44,9 +40,8 @@ class TerminalManager:
 			"created": time.time(),
 			"status": "starting",
 		}
-		self._store.set_json(P.meta_key(term_id), meta, ttl=P.META_TTL)
+		self._reserve_slot(user, term_id, meta)
 		self._store.set_json(P.alive_key(term_id), 1, ttl=self._config.terminal_idle_seconds)
-		self._store.add_member(P.user_terms_key(user), term_id)
 
 		self._spawner.spawn(
 			[
@@ -69,6 +64,18 @@ class TerminalManager:
 			log_path=os.path.join(self._config.bench_path, "logs", "developer_studio_terminal.log"),
 		)
 		return meta
+
+	def _reserve_slot(self, user: str, term_id: str, meta: dict) -> None:
+		"""Enforce max_terminals without a race: reserve first, then count, roll back if over.
+
+		Concurrent requests each see the others' reservations, so a burst can never
+		exceed the limit (at worst it briefly rejects one request too many)."""
+		self._store.set_json(P.meta_key(term_id), meta, ttl=P.META_TTL)
+		self._store.add_member(P.user_terms_key(user), term_id)
+		if len(self.list_for(user)) > self._config.max_terminals:
+			self._store.remove_member(P.user_terms_key(user), term_id)
+			self._store.delete(P.meta_key(term_id))
+			frappe.throw(_("You can open at most {0} terminals").format(self._config.max_terminals))
 
 	def list_for(self, user: str) -> list[dict]:
 		terminals = []
@@ -98,7 +105,8 @@ class TerminalManager:
 	def read(self, user: str, term_id: str, after_seq: int = 0) -> dict:
 		"""Backlog for re-attaching or when socket.io is unavailable (polling)."""
 		meta = self._owned(user, term_id, allow_exited=True)
-		self._touch(term_id)
+		if meta.get("status") != "exited":
+			self._touch(term_id)  # a reading client counts as attached (never revive a finished one)
 		chunks = [c for c in self._store.range(P.output_key(term_id)) if c["seq"] > int(after_seq or 0)]
 		return {"chunks": chunks, "status": meta.get("status"), "exit_code": meta.get("exit_code")}
 

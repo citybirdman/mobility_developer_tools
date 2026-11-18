@@ -1,5 +1,5 @@
 import { notifyError } from "../core/api_client";
-import { iconColorForPath } from "../core/languages";
+import { languageForPath } from "../core/languages";
 
 const INDENT = 12;
 
@@ -8,7 +8,8 @@ const join = (dir, name) => (dir ? `${dir}/${name}` : name);
 
 /** Lazy-loaded file tree (explorer side bar). */
 export class FileExplorer {
-	constructor(host, { api, bus, contextMenu }) {
+	constructor(host, { api, bus, contextMenu, icons }) {
+		this.icons = icons;
 		this.api = api;
 		this.bus = bus;
 		this.menu = contextMenu;
@@ -57,6 +58,10 @@ export class FileExplorer {
 		bus.on("editor:active", (info) => this.highlight(info?.path));
 		this.aiTools = [];
 		bus.on("ai:tools", (tools) => (this.aiTools = tools.filter((t) => t.installed)));
+		bus.on("fs:folder-changed", (event) => this.onFolderChanged(event));
+		bus.on("icons:changed", () => {
+			for (const node of this.nodes.values()) if (node.row) this.renderIcon(node);
+		});
 	}
 
 	setRoot(abs, name) {
@@ -105,10 +110,9 @@ export class FileExplorer {
 		const isFolder = entry.type === "folder";
 		row.innerHTML = `
 			<span class="codicon ${isFolder ? "codicon-chevron-right" : "codicon-blank"} mdt-twisty"></span>
-			<span class="codicon ${isFolder ? "codicon-folder" : "codicon-file"} mdt-tree-icon"></span>
+			<span class="mdt-tree-icon" data-base="mdt-tree-icon"></span>
 			<span class="mdt-tree-label"></span>`;
 		row.querySelector(".mdt-tree-label").textContent = entry.name;
-		if (!isFolder) row.querySelector(".mdt-tree-icon").style.color = iconColorForPath(entry.path);
 		if (entry.symlink) row.classList.add("symlink");
 
 		const children = document.createElement("div");
@@ -117,6 +121,7 @@ export class FileExplorer {
 
 		const node = { ...entry, depth, el, row, children, loaded: false };
 		this.nodes.set(entry.path, node);
+		this.renderIcon(node);
 
 		row.addEventListener("click", () => {
 			this.select(node);
@@ -138,6 +143,18 @@ export class FileExplorer {
 		}
 	}
 
+	renderIcon(node) {
+		const isFolder = node.type === "folder";
+		this.icons.render(node.row.querySelector(".mdt-tree-icon"), {
+			name: node.name,
+			path: node.path,
+			type: node.type,
+			expanded: !!node.expanded,
+			languageId: isFolder ? null : languageForPath(node.path),
+		});
+		node.row.querySelector(".mdt-twisty").style.visibility = isFolder && this.icons.hidesArrows ? "hidden" : "";
+	}
+
 	async toggle(node) {
 		if (node.expanded) this.collapse(node);
 		else await this.expand(node);
@@ -149,7 +166,7 @@ export class FileExplorer {
 		this.expanded.add(node.path);
 		if (node.row) {
 			node.row.querySelector(".mdt-twisty").classList.replace("codicon-chevron-right", "codicon-chevron-down");
-			node.row.querySelector(".mdt-tree-icon").classList.replace("codicon-folder", "codicon-folder-opened");
+			this.renderIcon(node);
 		}
 		node.children.style.display = "";
 		if (!node.loaded) await this.loadChildren(node);
@@ -159,13 +176,30 @@ export class FileExplorer {
 		node.expanded = false;
 		this.expanded.delete(node.path);
 		node.row.querySelector(".mdt-twisty").classList.replace("codicon-chevron-down", "codicon-chevron-right");
-		node.row.querySelector(".mdt-tree-icon").classList.replace("codicon-folder-opened", "codicon-folder");
+		this.renderIcon(node);
 		node.children.style.display = "none";
 	}
 
 	collapseAll() {
 		for (const node of this.nodes.values()) if (node.expanded && node.row) this.collapse(node);
 		this.expanded.clear();
+	}
+
+	/** Folders the file watcher should check: the loaded root and every expanded folder. */
+	watchedFolders() {
+		const folders = this.rootNode.loaded ? [""] : [];
+		for (const path of this.expanded) if (this.nodes.get(path)?.loaded) folders.push(path);
+		return folders;
+	}
+
+	onFolderChanged({ path, signature }) {
+		if (this.tree.querySelector(".mdt-inline-input")) return; // never disturb a rename / new file in progress
+		if (signature === null) {
+			// the folder itself is gone: reload its parent instead
+			this.expanded.delete(path);
+			return this.refresh(parentOf(path));
+		}
+		this.refresh(path);
 	}
 
 	async refresh(path = "") {
@@ -209,6 +243,7 @@ export class FileExplorer {
 			{ label: __("New File..."), icon: "new-file", action: () => this.promptCreate(folder, "file") },
 			{ label: __("New Folder..."), icon: "new-folder", action: () => this.promptCreate(folder, "folder") },
 			{ label: __("Open in Terminal"), icon: "terminal", action: () => this.bus.emit("terminal:open", { cwd: folder.path }) },
+			{ label: __("Find in Folder..."), icon: "search", action: () => this.bus.emit("search:in-folder", { path: folder.path }) },
 			...this.aiTools.map((tool) => ({
 				label: __("Open {0} Here", [tool.label]),
 				icon: tool.icon,

@@ -28,7 +28,7 @@ class FileReader(Protocol):
 
 
 class FileWriter(Protocol):
-	def write(self, path: str, content: str, expected_mtime: float | None = None) -> dict: ...
+	def write(self, path: str, content: str, expected_version: str | None = None) -> dict: ...
 	def create_file(self, path: str) -> dict: ...
 	def create_folder(self, path: str) -> dict: ...
 	def rename(self, path: str, new_path: str) -> dict: ...
@@ -86,6 +86,7 @@ class LocalFileService:
 			"path": self._guard.relative(abs_path),
 			"content": raw.decode("utf-8", errors="replace"),
 			"mtime": os.path.getmtime(abs_path),
+			"version": file_version(os.stat(abs_path)),
 			"size": size,
 			"readonly": not os.access(abs_path, os.W_OK),
 		}
@@ -118,17 +119,18 @@ class LocalFileService:
 
 	# -- write --------------------------------------------------------------
 
-	def write(self, path, content, expected_mtime=None):
+	def write(self, path, content, expected_version=None):
 		abs_path = self._guard.resolve(path, must_exist=False)
 		if os.path.isdir(abs_path):
 			raise StudioPathError(_("{0} is a folder").format(path))
 
-		if expected_mtime and os.path.exists(abs_path):
-			if abs(os.path.getmtime(abs_path) - float(expected_mtime)) > 0.0005:
+		if expected_version and os.path.exists(abs_path):
+			if file_version(os.stat(abs_path)) != expected_version:
 				raise StudioConflictError(_("{0} was changed on disk after you opened it").format(path))
 
 		_atomic_write(abs_path, content or "")
-		return {"path": self._guard.relative(abs_path), "mtime": os.path.getmtime(abs_path)}
+		st = os.stat(abs_path)
+		return {"path": self._guard.relative(abs_path), "mtime": st.st_mtime, "version": file_version(st)}
 
 	def create_file(self, path):
 		abs_path = self._new_path(path)
@@ -164,6 +166,13 @@ class LocalFileService:
 		if os.path.lexists(abs_path):
 			raise StudioPathError(_("{0} already exists").format(path))
 		return abs_path
+
+
+def file_version(st: os.stat_result) -> str:
+	"""Identifies one state of a file. mtime alone is not enough: the kernel updates it
+	on a coarse clock tick, so two writes a few ms apart can share it. Atomic saves
+	(ours, most editors, git) replace the inode, so they always change the version."""
+	return f"{st.st_mtime_ns:x}-{st.st_size:x}-{st.st_ino:x}"
 
 
 def _atomic_write(abs_path: str, content: str) -> None:

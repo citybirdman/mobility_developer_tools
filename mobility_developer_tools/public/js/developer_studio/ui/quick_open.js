@@ -1,9 +1,10 @@
 import { notifyError } from "../core/api_client";
-import { iconColorForPath } from "../core/languages";
+import { languageForPath } from "../core/languages";
 
 /** Ctrl+P file picker. */
 export class QuickOpen {
-	constructor(host, { api, bus }) {
+	constructor(host, { api, bus, icons }) {
+		this.icons = icons;
 		this.api = api;
 		this.bus = bus;
 		this.results = [];
@@ -82,8 +83,8 @@ export class QuickOpen {
 			const row = document.createElement("div");
 			row.className = "mdt-quick-row" + (i === this.index ? " active" : "");
 			const name = path.split("/").pop();
-			row.innerHTML = `<span class="codicon codicon-file"></span><span class="mdt-quick-name"></span><span class="mdt-quick-dir"></span>`;
-			row.firstChild.style.color = iconColorForPath(path);
+			row.innerHTML = `<span data-base="mdt-quick-icon"></span><span class="mdt-quick-name"></span><span class="mdt-quick-dir"></span>`;
+			this.icons.render(row.firstChild, { name, path, type: "file", languageId: languageForPath(path) });
 			row.querySelector(".mdt-quick-name").textContent = name;
 			row.querySelector(".mdt-quick-dir").textContent = path.slice(0, -name.length - 1);
 			row.addEventListener("mousedown", (e) => {

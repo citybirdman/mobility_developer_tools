@@ -20,12 +20,22 @@ class AiProfile:
 		return path
 
 
+@dataclass(frozen=True)
+class ToolContext:
+	"""Everything a tool needs to build its command line and environment."""
+
+	site: str
+	user: str
+	profile: AiProfile
+
+
 class AiTool(ABC):
-	"""An AI coding CLI that runs inside a studio terminal."""
+	"""A CLI (e.g. an AI assistant) that runs inside a studio terminal."""
 
 	key: str = ""
 	label: str = ""
 	icon: str = "sparkle"  # codicon name
+	category: str = "ai"  # group heading in the Tools panel
 	binary: str = ""
 	install_command: str = ""
 	docs_url: str = ""
@@ -44,9 +54,9 @@ class AiTool(ABC):
 		text = (out.stdout or out.stderr or "").strip().splitlines()
 		return text[0][:80] if text else None
 
-	def argv(self, binary: str) -> list[str]:
+	def argv(self, binary: str, ctx: ToolContext) -> list[str]:
 		return [binary]
 
 	@abstractmethod
-	def env(self, profile: AiProfile) -> dict[str, str]:
-		"""Environment for this tool, pointing its config/credentials into the profile."""
+	def env(self, ctx: ToolContext) -> dict[str, str]:
+		"""Environment for this tool, pointing its config/credentials into the user's profile."""

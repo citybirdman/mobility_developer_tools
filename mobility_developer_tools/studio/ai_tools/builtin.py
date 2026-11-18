@@ -1,4 +1,4 @@
-from mobility_developer_tools.studio.ai_tools.base import AiProfile, AiTool
+from mobility_developer_tools.studio.ai_tools.base import AiTool, ToolContext
 
 
 class ClaudeCodeTool(AiTool):
@@ -14,12 +14,12 @@ class ClaudeCodeTool(AiTool):
 		"paste it here with Ctrl+V, then press Enter."
 	)
 
-	def env(self, profile: AiProfile):
+	def env(self, ctx: ToolContext):
 		return {
 			# the native installer and auto-updates live in ~/.local -> keep them in the site folder
-			"HOME": profile.tools_home,
+			"HOME": ctx.profile.tools_home,
 			# settings, history and credentials live in the user's own folder
-			"CLAUDE_CONFIG_DIR": profile.dir("claude"),
+			"CLAUDE_CONFIG_DIR": ctx.profile.dir("claude"),
 		}
 
 
@@ -32,13 +32,13 @@ class AntigravityTool(AiTool):
 	docs_url = "https://antigravity.google/docs/cli/overview"
 	sign_in_hint = "Click the Google sign-in link that appears, sign in, then come back to the terminal."
 
-	def env(self, profile: AiProfile):
+	def env(self, ctx: ToolContext):
 		# agy keeps its sign-in under HOME / XDG folders -> the user's own folder
 		return {
-			"HOME": profile.dir("antigravity-home"),
-			"XDG_CONFIG_HOME": profile.dir("antigravity-home", ".config"),
-			"XDG_DATA_HOME": profile.dir("antigravity-home", ".local", "share"),
-			"XDG_CACHE_HOME": profile.dir("antigravity-home", ".cache"),
+			"HOME": ctx.profile.dir("antigravity-home"),
+			"XDG_CONFIG_HOME": ctx.profile.dir("antigravity-home", ".config"),
+			"XDG_DATA_HOME": ctx.profile.dir("antigravity-home", ".local", "share"),
+			"XDG_CACHE_HOME": ctx.profile.dir("antigravity-home", ".cache"),
 			# agy prints a sign-in URL (instead of opening a local browser) for remote sessions
 			"SSH_CONNECTION": "127.0.0.1 0 127.0.0.1 22",
 			"SSH_CLIENT": "127.0.0.1 0 22",

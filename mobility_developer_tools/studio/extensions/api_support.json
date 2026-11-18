@@ -1,0 +1,95 @@
+{
+	"_comment": "Single source of truth for the vscode API the studio implements. Read by checker.py; tests/js asserts the browser runtime (public/js/extension_runtime/runtime.js) implements every 'supported' entry.",
+	"namespaces": {
+		"commands": {
+			"supported": ["registerCommand", "registerTextEditorCommand", "executeCommand", "getCommands"],
+			"unsupported": []
+		},
+		"window": {
+			"supported": [
+				"showInformationMessage", "showWarningMessage", "showErrorMessage", "showInputBox", "showQuickPick",
+				"createStatusBarItem", "createOutputChannel", "withProgress", "setStatusBarMessage",
+				"createTextEditorDecorationType", "activeTextEditor", "visibleTextEditors", "showTextDocument",
+				"onDidChangeActiveTextEditor", "onDidChangeVisibleTextEditors", "onDidChangeTextEditorSelection",
+				"onDidChangeTextEditorVisibleRanges", "onDidChangeTextEditorOptions", "state", "onDidChangeWindowState",
+				"activeColorTheme", "onDidChangeActiveColorTheme"
+			],
+			"unsupported": [
+				"createWebviewPanel", "registerWebviewViewProvider", "registerWebviewPanelSerializer", "createTreeView",
+				"registerTreeDataProvider", "createTerminal", "registerTerminalLinkProvider", "registerTerminalProfileProvider",
+				"showOpenDialog", "showSaveDialog", "showWorkspaceFolderPick", "createQuickPick", "createInputBox",
+				"registerCustomEditorProvider", "registerUriHandler", "registerFileDecorationProvider", "activeTerminal",
+				"terminals", "onDidOpenTerminal", "onDidCloseTerminal", "tabGroups", "activeNotebookEditor",
+				"showNotebookDocument", "createWebviewTextEditorInset"
+			]
+		},
+		"workspace": {
+			"supported": [
+				"getConfiguration", "onDidChangeConfiguration", "textDocuments", "onDidOpenTextDocument",
+				"onDidCloseTextDocument", "onDidChangeTextDocument", "onDidSaveTextDocument", "onWillSaveTextDocument",
+				"workspaceFolders", "rootPath", "name", "getWorkspaceFolder", "asRelativePath", "applyEdit",
+				"openTextDocument", "fs", "isTrusted", "onDidChangeWorkspaceFolders", "onDidGrantWorkspaceTrust",
+				"createFileSystemWatcher", "onDidCreateFiles", "onDidDeleteFiles", "onDidRenameFiles",
+				"onWillCreateFiles", "onWillDeleteFiles", "onWillRenameFiles"
+			],
+			"unsupported": [
+				"findFiles", "registerTextDocumentContentProvider", "registerFileSystemProvider", "registerTaskProvider",
+				"saveAll", "updateWorkspaceFolders", "notebookDocuments", "openNotebookDocument", "workspaceFile",
+				"registerNotebookSerializer"
+			]
+		},
+		"languages": {
+			"supported": [
+				"registerCompletionItemProvider", "registerHoverProvider", "registerDefinitionProvider",
+				"registerDeclarationProvider", "registerTypeDefinitionProvider", "registerImplementationProvider",
+				"registerReferenceProvider", "registerDocumentHighlightProvider", "registerRenameProvider",
+				"registerDocumentFormattingEditProvider", "registerDocumentRangeFormattingEditProvider",
+				"registerOnTypeFormattingEditProvider", "registerDocumentSymbolProvider", "registerFoldingRangeProvider",
+				"registerCodeActionsProvider", "registerSignatureHelpProvider", "registerDocumentLinkProvider",
+				"registerInlayHintsProvider", "createDiagnosticCollection", "getDiagnostics", "onDidChangeDiagnostics",
+				"getLanguages", "match", "setLanguageConfiguration"
+			],
+			"unsupported": [
+				"registerCodeLensProvider", "registerColorProvider", "registerDocumentSemanticTokensProvider",
+				"registerDocumentRangeSemanticTokensProvider", "registerInlineCompletionItemProvider",
+				"registerCallHierarchyProvider", "registerTypeHierarchyProvider", "registerWorkspaceSymbolProvider",
+				"registerSelectionRangeProvider", "registerLinkedEditingRangeProvider",
+				"registerEvaluatableExpressionProvider", "registerInlineValuesProvider", "setTextDocumentLanguage",
+				"createLanguageStatusItem"
+			]
+		},
+		"env": {
+			"supported": [
+				"clipboard", "language", "appName", "appHost", "uriScheme", "machineId", "sessionId", "openExternal",
+				"uiKind", "shell", "remoteName", "isTelemetryEnabled", "onDidChangeTelemetryEnabled", "isNewAppInstall"
+			],
+			"unsupported": ["createTelemetryLogger", "asExternalUri"]
+		},
+		"extensions": {"supported": ["getExtension", "all", "onDidChange"], "unsupported": []},
+		"l10n": {"supported": ["t", "bundle", "uri"], "unsupported": []}
+	},
+	"unsupported_namespaces": {
+		"debug": ["startDebugging", "stopDebugging", "registerDebugConfigurationProvider", "registerDebugAdapterDescriptorFactory", "registerDebugAdapterTrackerFactory", "activeDebugSession", "activeDebugConsole", "breakpoints", "addBreakpoints", "removeBreakpoints", "onDidStartDebugSession", "onDidTerminateDebugSession", "onDidChangeActiveDebugSession", "onDidReceiveDebugSessionCustomEvent", "onDidChangeBreakpoints", "asDebugSourceUri"],
+		"tasks": ["registerTaskProvider", "fetchTasks", "executeTask", "taskExecutions", "onDidStartTask", "onDidEndTask", "onDidStartTaskProcess", "onDidEndTaskProcess"],
+		"scm": ["createSourceControl", "inputBox"],
+		"authentication": ["getSession", "getAccounts", "registerAuthenticationProvider", "onDidChangeSessions"],
+		"notebooks": ["createNotebookController", "registerNotebookCellStatusBarItemProvider", "createRendererMessaging"],
+		"comments": ["createCommentController"],
+		"tests": ["createTestController"],
+		"chat": ["createChatParticipant", "registerChatParticipantDetectionProvider"],
+		"lm": ["selectChatModels", "registerTool", "invokeTool", "tools", "registerMcpServerDefinitionProvider", "onDidChangeChatModels"]
+	},
+	"types": [
+		"Uri", "Position", "Range", "Selection", "Location", "Disposable", "EventEmitter", "CancellationTokenSource",
+		"CancellationError", "TextEdit", "WorkspaceEdit", "SnippetString", "MarkdownString", "CompletionItem",
+		"CompletionItemKind", "CompletionItemTag", "CompletionList", "CompletionTriggerKind", "Hover", "Diagnostic",
+		"DiagnosticSeverity", "DiagnosticTag", "DiagnosticRelatedInformation", "DocumentSymbol", "SymbolInformation",
+		"SymbolKind", "FoldingRange", "FoldingRangeKind", "CodeAction", "CodeActionKind", "CodeActionTriggerKind",
+		"SignatureHelp", "SignatureInformation", "ParameterInformation", "SignatureHelpTriggerKind",
+		"DocumentHighlight", "DocumentHighlightKind", "DocumentLink", "InlayHint", "InlayHintKind",
+		"StatusBarAlignment", "ThemeColor", "ThemeIcon", "EndOfLine", "TextEditorRevealType", "ViewColumn",
+		"ProgressLocation", "ConfigurationTarget", "OverviewRulerLane", "DecorationRangeBehavior",
+		"TextDocumentSaveReason", "ExtensionMode", "ExtensionKind", "UIKind", "ColorThemeKind", "FileType",
+		"RelativePattern", "IndentAction", "TextEditorLineNumbersStyle", "TextEditorCursorStyle", "FileSystemError"
+	]
+}

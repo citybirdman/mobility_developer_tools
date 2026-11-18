@@ -19,7 +19,7 @@ import shlex
 
 from frappe import _
 
-from mobility_developer_tools.studio.ai_tools.base import AiProfile, AiTool
+from mobility_developer_tools.studio.ai_tools.base import AiProfile, AiTool, ToolContext
 from mobility_developer_tools.studio.ai_tools.registry import AiToolRegistry
 from mobility_developer_tools.studio.config import StudioConfig
 from mobility_developer_tools.studio.exceptions import StudioPathError
@@ -52,6 +52,7 @@ class AiToolService:
 					"key": tool.key,
 					"label": tool.label,
 					"icon": tool.icon,
+					"category": tool.category,
 					"installed": bool(binary),
 					# "site": stored in this site's folder; "server": only installed for the Linux user
 					"location": None if not binary else ("site" if self._in_site(binary) else "server"),
@@ -71,9 +72,10 @@ class AiToolService:
 		if not binary:
 			raise StudioPathError(_("{0} is not installed yet. Click Install first.").format(tool.label))
 
+		ctx = ToolContext(site=self._site, user=user, profile=self._profile(user))
 		env = {
 			**self._git_env(),
-			**tool.env(self._profile(user)),
+			**tool.env(ctx),
 			"BROWSER": os.path.join(self._shim_dir(), "xdg-open"),
 			"MDT_SITE": self._site,
 			"MDT_SITES_PATH": self._config.sites_path,
@@ -81,11 +83,11 @@ class AiToolService:
 			"MDT_TOOL_LABEL": tool.label,
 		}
 		return LaunchSpec(
-			argv=tool.argv(binary),
+			argv=tool.argv(binary, ctx),
 			env=env,
 			path_prepend=[self._shim_dir(), *self._bin_dirs()],
 			title=tool.label,
-			kind="ai",
+			kind=tool.category,
 		)
 
 	def install_spec(self, key: str) -> LaunchSpec:

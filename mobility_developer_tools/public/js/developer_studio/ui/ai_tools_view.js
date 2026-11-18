@@ -14,7 +14,7 @@ export class AiToolsView {
 		this.el.className = "mdt-ai-view";
 		this.el.innerHTML = `
 			<div class="mdt-sidebar-title">
-				<span>${__("AI Assistants")}</span>
+				<span>${__("Tools")}</span>
 				<span class="codicon codicon-refresh" title="${__("Refresh")}"></span>
 			</div>
 			<div class="mdt-ai-list"><div class="mdt-ai-empty">${__("Loading...")}</div></div>
@@ -47,7 +47,6 @@ export class AiToolsView {
 		this.bus.emit("terminal:launch", {
 			method: "ai_tool_start",
 			args: { key, cwd },
-			maximize: true,
 			banner: `${tool.label} - ${__("folder")}: /${cwd}\r\n${tool.sign_in_hint}`,
 		});
 	}
@@ -64,7 +63,15 @@ export class AiToolsView {
 
 	render() {
 		this.list.innerHTML = "";
+		let category = null;
 		for (const tool of this.tools) {
+			if (tool.category !== category) {
+				category = tool.category;
+				const heading = document.createElement("div");
+				heading.className = "mdt-ai-group";
+				heading.textContent = CATEGORY_LABELS[category] || category;
+				this.list.appendChild(heading);
+			}
 			const card = document.createElement("div");
 			card.className = "mdt-ai-card";
 			card.innerHTML = `
@@ -107,6 +114,8 @@ export class AiToolsView {
 		if (!this.tools.length) this.list.innerHTML = `<div class="mdt-ai-empty">${__("No AI tools configured")}</div>`;
 	}
 }
+
+const CATEGORY_LABELS = { ai: __("AI Assistants") };
 
 function button(label, icon, variant, onClick) {
 	const el = document.createElement("button");

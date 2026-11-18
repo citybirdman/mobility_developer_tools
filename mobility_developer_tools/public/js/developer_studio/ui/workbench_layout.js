@@ -16,11 +16,14 @@ export class WorkbenchLayout {
 			`<div class="mdt-main">
 				<div class="mdt-activitybar">
 					<span class="codicon codicon-files active" data-action="explorer" data-view="explorer" title="${__("Explorer")}"></span>
+					<span class="codicon codicon-search" data-action="search" data-view="search" title="${__("Search")} (Ctrl+Shift+F)"></span>
 					<span class="codicon codicon-sparkle" data-action="ai" data-view="ai" title="${__("AI Assistants")}"></span>
-					<span class="codicon codicon-search" data-action="quick-open" title="${__("Quick Open")} (Ctrl+P)"></span>
+					<span class="codicon codicon-server-process" data-action="bench" data-view="bench" title="${__("Frappe & Bench")}"></span>
+					<span class="codicon codicon-extensions" data-action="extensions" data-view="extensions" title="${__("Extensions")} (Ctrl+Shift+X)"></span>
 					<span class="codicon codicon-terminal" data-action="terminal" title="${__("Toggle Terminal")} (Ctrl+\`)"></span>
 					<span class="mdt-activity-spacer"></span>
 					<span class="codicon codicon-lock" data-action="lock" title="${__("Lock")}"></span>
+					<span class="mdt-activity-avatar" data-action="account" title="${frappe.utils.escape_html(frappe.session.user_fullname || frappe.session.user)}">${frappe.avatar(frappe.session.user, "avatar-small")}</span>
 				</div>
 				<div class="mdt-sidebar"></div>
 				<div class="mdt-sash mdt-sash-v"></div>
@@ -50,7 +53,10 @@ export class WorkbenchLayout {
 	}
 
 	onActivity(handler) {
-		this.activitybar.addEventListener("click", (e) => e.target.dataset.action && handler(e.target.dataset.action));
+		this.activitybar.addEventListener("click", (e) => {
+			const target = e.target.closest("[data-action]");
+			if (target) handler(target.dataset.action, target);
+		});
 	}
 
 	/** Creates a side bar view; only one view is visible at a time. */
@@ -66,8 +72,8 @@ export class WorkbenchLayout {
 	}
 
 	/** Shows a view; clicking the active view again hides the side bar (like VS Code). */
-	showView(name) {
-		if (this.currentView === name && this.state.sidebarVisible) return this.toggleSidebar(false);
+	showView(name, { toggle = true } = {}) {
+		if (this.currentView === name && this.state.sidebarVisible) return toggle ? this.toggleSidebar(false) : undefined;
 		this.currentView = name;
 		this.state.sidebarVisible = true;
 		this.applyView();

@@ -11,11 +11,13 @@ export class RunService {
 		this.editor = editor;
 		this.terminals = terminals;
 		this.menu = contextMenu;
+		this.bus = bus;
 		bus.on("run:request", ({ path, anchor } = {}) => this.run(path || editor.active?.path, anchor));
 	}
 
 	async run(path, anchor) {
 		if (!path) return frappe.show_alert({ message: __("Open a file to run it"), indicator: "orange" });
+		if (this.editor.tabs.get(path)?.virtual) return this.bus.emit("console:run", { mode: "all" });
 		try {
 			const runners = await this.api.call("get_runners", { path });
 			if (!runners.length) {

@@ -21,8 +21,27 @@ const FILENAMES = {
 	".editorconfig": "ini",
 };
 
+// languages contributed by installed extensions win over the defaults above
+const CONTRIBUTED_EXTENSIONS = new Map();
+const CONTRIBUTED_FILENAMES = new Map();
+
+/** Returns a disposable that removes the mapping again (extension disabled). */
+export function registerContributedLanguage(extOrName, languageId, isFilename = false) {
+	const map = isFilename ? CONTRIBUTED_FILENAMES : CONTRIBUTED_EXTENSIONS;
+	const key = String(extOrName).toLowerCase();
+	map.set(key, languageId);
+	return { dispose: () => map.get(key) === languageId && map.delete(key) };
+}
+
 export function languageForPath(path) {
 	const name = path.split("/").pop().toLowerCase();
+	if (CONTRIBUTED_FILENAMES.has(name)) return CONTRIBUTED_FILENAMES.get(name);
+	// longest contributed extension first: "file.jinja.html" -> ".jinja.html" before ".html"
+	const parts = name.split(".");
+	for (let i = 1; i < parts.length; i++) {
+		const ext = `.${parts.slice(i).join(".")}`;
+		if (CONTRIBUTED_EXTENSIONS.has(ext)) return CONTRIBUTED_EXTENSIONS.get(ext);
+	}
 	if (FILENAMES[name]) return FILENAMES[name];
 
 	const dot = name.lastIndexOf(".");

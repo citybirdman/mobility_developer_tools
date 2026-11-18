@@ -27,3 +27,15 @@ class StudioConflictError(frappe.ValidationError):
 	"""File changed on disk since it was opened."""
 
 	http_status_code = 409
+
+
+class StudioCommandError(frappe.ValidationError):
+	"""Invalid bench command or command input."""
+
+	http_status_code = 400
+
+
+class StudioSearchError(frappe.ValidationError):
+	"""Invalid search / replace query (bad regex, empty text...)."""
+
+	http_status_code = 400

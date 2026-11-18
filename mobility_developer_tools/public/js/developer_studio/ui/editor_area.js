@@ -1,5 +1,6 @@
 import { notifyError } from "../core/api_client";
-import { iconColorForPath, languageForPath } from "../core/languages";
+import { fileChangeAction } from "../core/change_policy";
+import { languageForPath } from "../core/languages";
 
 export const EDITOR_THEMES = { dark: "mdt-dark", light: "mdt-light" };
 
@@ -59,10 +60,12 @@ export function defineEditorThemes() {
 
 /** Editor tabs + a single Monaco editor with one model per open file. */
 export class EditorArea {
-	constructor(host, { api, bus, theme = "dark" }) {
+	constructor(host, { api, bus, icons, monacoTheme = EDITOR_THEMES.dark }) {
+		this.icons = icons;
 		this.api = api;
 		this.bus = bus;
 		this.tabs = new Map(); // path -> tab
+		this.preloaded = new Map(); // path -> file data of models created without a tab
 		this.active = null;
 
 		this.el = document.createElement("div");
@@ -76,6 +79,7 @@ export class EditorArea {
 				</div>
 			</div>
 			<div class="mdt-breadcrumbs"></div>
+			<div class="mdt-editor-banner"></div>
 			<div class="mdt-editor-host"></div>
 			<div class="mdt-welcome">
 				<img src="/assets/mobility_developer_tools/images/logo.svg" alt="">
@@ -91,6 +95,8 @@ export class EditorArea {
 		host.appendChild(this.el);
 		this.tabsEl = this.el.querySelector(".mdt-tabs");
 		this.breadcrumbs = this.el.querySelector(".mdt-breadcrumbs");
+		this.banner = this.el.querySelector(".mdt-editor-banner");
+		this.banner.addEventListener("click", (e) => this.onBannerAction(e.target.closest("[data-action]")?.dataset.action));
 		this.runButton = this.el.querySelector(".mdt-run-btn");
 		this.runButton.addEventListener("click", () => this.active && bus.emit("run:request", { path: this.active.path }));
 		this.el.querySelector('[data-action="save"]').addEventListener("click", () => this.save());
@@ -98,7 +104,7 @@ export class EditorArea {
 		defineEditorThemes();
 		this.editor = monaco.editor.create(this.el.querySelector(".mdt-editor-host"), {
 			model: null,
-			theme: EDITOR_THEMES[theme] || EDITOR_THEMES.dark,
+			theme: monacoTheme,
 			automaticLayout: true,
 			fontFamily: "'JetBrains Mono', 'Fira Code', Menlo, Consolas, 'DejaVu Sans Mono', monospace",
 			fontSize: 13,
@@ -118,9 +124,11 @@ export class EditorArea {
 		);
 
 		bus.on("file:open", ({ path }) => this.open(path));
-		bus.on("theme:changed", (mode) => monaco.editor.setTheme(EDITOR_THEMES[mode]));
+		bus.on("appearance:changed", ({ monacoTheme: theme }) => monaco.editor.setTheme(theme));
+		bus.on("icons:changed", () => this.render());
 		bus.on("entry:renamed", ({ from, to }) => this.handleRename(from, to));
 		bus.on("entry:deleted", ({ path }) => this.handleDelete(path));
+		bus.on("fs:file-stat", (event) => this.onFileStat(event));
 		this.render();
 	}
 
@@ -128,21 +136,26 @@ export class EditorArea {
 
 	async open(path) {
 		if (this.tabs.has(path)) return this.activate(path);
-		let file;
-		try {
-			file = await this.api.call("read_file", { path });
-		} catch (e) {
-			return notifyError(e);
+		let file = this.preloaded.get(path);
+		if (!file) {
+			try {
+				file = await this.api.call("read_file", { path });
+			} catch (e) {
+				return notifyError(e);
+			}
 		}
 		if (this.tabs.has(path)) return this.activate(path);
 
 		const language = languageForPath(path);
-		const model = monaco.editor.createModel(file.content, language, monaco.Uri.from({ scheme: "studio", path: `/${path}` }));
+		const uri = monaco.Uri.from({ scheme: "studio", path: `/${path}` });
+		// a model may already exist without a tab (loaded for Go to Definition)
+		const model = monaco.editor.getModel(uri) || monaco.editor.createModel(file.content, language, uri);
+		this.preloaded.delete(path);
 		const tab = {
 			path,
 			model,
 			language,
-			mtime: file.mtime,
+			version: file.version,
 			readonly: file.readonly,
 			savedVersion: model.getAlternativeVersionId(),
 			viewState: null,
@@ -150,6 +163,43 @@ export class EditorArea {
 		model.onDidChangeContent(() => this.renderTab(tab));
 		this.tabs.set(path, tab);
 		this.activate(path);
+	}
+
+	/** Model of a file without opening a tab (Monaco needs it to show a definition in another file). */
+	async ensureModel(path) {
+		const uri = monaco.Uri.from({ scheme: "studio", path: `/${path}` });
+		const existing = monaco.editor.getModel(uri);
+		if (existing) return existing;
+		try {
+			const file = await this.api.call("read_file", { path });
+			this.preloaded.set(path, file);
+			return monaco.editor.getModel(uri) || monaco.editor.createModel(file.content, languageForPath(path), uri);
+		} catch (e) {
+			return null;
+		}
+	}
+
+	/** Move the cursor of the active tab to a Monaco selection / position and show it. */
+	reveal(target) {
+		if (!target) return;
+		if ("startLineNumber" in target) {
+			this.editor.setSelection(target);
+			this.editor.revealRangeInCenterIfOutsideViewport(target);
+		} else if ("lineNumber" in target) {
+			this.editor.setPosition(target);
+			this.editor.revealPositionInCenterIfOutsideViewport(target);
+		}
+		this.editor.focus();
+	}
+
+	/** A tab that is not a file on disk (e.g. the bench console buffer). Never dirty: onChange persists it. */
+	openVirtual({ key, title, language, content, hint, onChange }) {
+		if (this.tabs.has(key)) return this.activate(key);
+		const model = monaco.editor.createModel(content || "", language, monaco.Uri.from({ scheme: "studio-console", path: `/${key.replace(/[^\w.-]+/g, "_")}` }));
+		const tab = { path: key, model, language, virtual: true, title, hint, readonly: false, savedVersion: model.getAlternativeVersionId(), viewState: null };
+		model.onDidChangeContent(() => onChange?.(model.getValue()));
+		this.tabs.set(key, tab);
+		this.activate(key);
 	}
 
 	activate(path) {
@@ -194,6 +244,7 @@ export class EditorArea {
 	// -- save -----------------------------------------------------------------
 
 	isDirty(tab) {
+		if (tab.virtual) return false;
 		return tab.model.getAlternativeVersionId() !== tab.savedVersion;
 	}
 
@@ -203,17 +254,23 @@ export class EditorArea {
 
 	async save(path = this.active?.path, { overwrite = false } = {}) {
 		const tab = this.tabs.get(path);
-		if (!tab || tab.readonly) return;
+		if (!tab || tab.readonly || tab.virtual) return;
 		const version = tab.model.getAlternativeVersionId();
+		tab.saving = true;
 		try {
 			const result = await this.api.call("write_file", {
 				path: tab.path,
 				content: tab.model.getValue(),
-				expected_mtime: overwrite ? null : tab.mtime,
+				expected_version: overwrite ? null : tab.version,
 			});
-			tab.mtime = result.mtime;
+			tab.version = result.version;
 			tab.savedVersion = version;
+			tab.lastSavedAt = Date.now();
+			this.bus.emit("file:saved", { path: tab.path });
+			tab.deleted = false;
+			tab.conflictVersion = null;
 			this.renderTab(tab);
+			this.renderBanner();
 			frappe.show_alert({ message: __("Saved {0}", [frappe.utils.escape_html(tab.path)]), indicator: "green" }, 2);
 			return true;
 		} catch (e) {
@@ -226,14 +283,115 @@ export class EditorArea {
 				);
 			} else notifyError(e);
 			return false;
+		} finally {
+			tab.saving = false;
 		}
+	}
+
+	// -- changes made outside this editor ----------------------------------------
+
+	isDirtyPath(path) {
+		const tab = this.tabs.get(path);
+		return !!tab && this.isDirty(tab);
+	}
+
+	/** Paths the file watcher should check. */
+	openPaths() {
+		return [...this.tabs.values()].filter((t) => !t.virtual).map((t) => t.path);
+	}
+
+	onFileStat({ path, stat, requestedAt }) {
+		const tab = this.tabs.get(path);
+		if (!tab) return;
+		switch (fileChangeAction(tab, stat, requestedAt, this.isDirty(tab))) {
+			case "deleted":
+				tab.deleted = true;
+				break;
+			case "restored":
+				tab.deleted = false;
+				break;
+			case "reload":
+				return this.reloadFromDisk(tab);
+			case "conflict":
+				tab.conflictVersion = stat.version;
+				break;
+			default:
+				return;
+		}
+		this.renderTab(tab);
+		this.renderBanner();
+	}
+
+	/** Replace the content with the disk version, keeping undo history, cursor and scroll. */
+	async reloadFromDisk(tab, { discardLocal = false } = {}) {
+		tab.reloading = true;
+		let file;
+		try {
+			file = await this.api.call("read_file", { path: tab.path });
+		} catch (e) {
+			tab.reloading = false;
+			return notifyError(e);
+		}
+		tab.reloading = false;
+		if (!this.tabs.has(tab.path)) return;
+		if (this.isDirty(tab) && !discardLocal) {
+			// the user started typing while we were fetching: ask instead of overwriting
+			tab.conflictVersion = file.version;
+			return this.renderBanner();
+		}
+
+		if (tab.model.getValue() !== file.content) {
+			const isActive = tab === this.active;
+			const viewState = isActive ? this.editor.saveViewState() : tab.viewState;
+			tab.model.pushEditOperations([], [{ range: tab.model.getFullModelRange(), text: file.content }], () => null);
+			if (isActive && viewState) this.editor.restoreViewState(viewState);
+		}
+		Object.assign(tab, { version: file.version, readonly: file.readonly, deleted: false, conflictVersion: null });
+		tab.savedVersion = tab.model.getAlternativeVersionId();
+		if (tab === this.active) this.editor.updateOptions({ readOnly: tab.readonly });
+		this.renderTab(tab);
+		this.renderBanner();
+	}
+
+	onBannerAction(action) {
+		const tab = this.active;
+		if (!tab || !action) return;
+		if (action === "reload") this.reloadFromDisk(tab, { discardLocal: true });
+		if (action === "keep") {
+			// treat the disk version as seen: the next save overwrites it without asking
+			tab.version = tab.conflictVersion;
+			tab.conflictVersion = null;
+			this.renderBanner();
+		}
+		if (action === "close") this.close(tab.path, true);
+	}
+
+	renderBanner() {
+		const tab = this.active;
+		this.banner.innerHTML = "";
+		this.banner.className = "mdt-editor-banner";
+		if (!tab || (!tab.deleted && !tab.conflictVersion)) return;
+
+		this.banner.classList.add("visible", tab.deleted ? "deleted" : "conflict");
+		const text = tab.deleted
+			? __("This file was deleted on disk. Saving will create it again.")
+			: __("This file was changed on disk, and you have unsaved changes here.");
+		const buttons = tab.deleted
+			? [[__("Close Tab"), "close", "ghost"]]
+			: [
+					[__("Reload (discard mine)"), "reload", "primary"],
+					[__("Keep Mine"), "keep", "ghost"],
+			  ];
+		this.banner.innerHTML = `<span class="codicon codicon-${tab.deleted ? "trash" : "warning"}"></span><span class="mdt-banner-text"></span>
+			${buttons.map(([label, action, variant]) => `<button class="mdt-btn mdt-btn-small mdt-btn-${variant}" data-action="${action}">${label}</button>`).join("")}`;
+		this.banner.querySelector(".mdt-banner-text").textContent = text;
 	}
 
 	// -- rename / delete sync ---------------------------------------------------
 
 	handleRename(from, to) {
 		for (const tab of [...this.tabs.values()]) {
-			if (tab.path !== from && !tab.path.startsWith(`${from}/`)) continue;
+			if (tab.virtual || (tab.path !== from && !tab.path.startsWith(`${from}/`))) continue;
 			const newPath = to + tab.path.slice(from.length);
 			const wasActive = this.active === tab;
 			const model = monaco.editor.createModel(tab.model.getValue(), languageForPath(newPath), monaco.Uri.from({ scheme: "studio", path: `/${newPath}` }));
@@ -254,7 +412,7 @@ export class EditorArea {
 
 	handleDelete(path) {
 		for (const tab of [...this.tabs.values()]) {
-			if (tab.path === path || tab.path.startsWith(`${path}/`)) this.close(tab.path, true);
+			if (!tab.virtual && (tab.path === path || tab.path.startsWith(`${path}/`))) this.close(tab.path, true);
 		}
 	}
 
@@ -267,11 +425,13 @@ export class EditorArea {
 			tab.el.className = "mdt-tab";
 			tab.el.title = tab.path;
 			tab.el.innerHTML = `
-				<span class="codicon codicon-file mdt-tab-icon"></span>
+				<span class="mdt-tab-icon" data-base="mdt-tab-icon"></span>
 				<span class="mdt-tab-label"></span>
 				<span class="codicon codicon-close mdt-tab-close"></span>`;
-			tab.el.querySelector(".mdt-tab-icon").style.color = iconColorForPath(tab.path);
-			tab.el.querySelector(".mdt-tab-label").textContent = tab.path.split("/").pop();
+			const icon = tab.el.querySelector(".mdt-tab-icon");
+			if (tab.virtual) icon.className = "codicon codicon-debug-console mdt-tab-icon";
+			else this.icons.render(icon, { name: tab.path.split("/").pop(), path: tab.path, type: "file", languageId: tab.language });
+			tab.el.querySelector(".mdt-tab-label").textContent = tab.title || tab.path.split("/").pop();
 			tab.el.addEventListener("click", () => this.activate(tab.path));
 			tab.el.addEventListener("auxclick", (e) => e.button === 1 && this.close(tab.path));
 			tab.el.querySelector(".mdt-tab-close").addEventListener("click", (e) => {
@@ -286,16 +446,18 @@ export class EditorArea {
 		this.el.classList.toggle("empty", empty);
 		this.breadcrumbs.innerHTML = "";
 		if (!empty) {
-			this.breadcrumbs.textContent = this.active.path.split("/").join("  ›  ");
+			this.breadcrumbs.textContent = this.active.virtual ? this.active.hint || "" : this.active.path.split("/").join("  ›  ");
 			if (this.active.readonly) this.breadcrumbs.append(`  (${__("read only")})`);
 			this.active.el?.scrollIntoView({ block: "nearest", inline: "nearest" });
 		}
+		this.renderBanner();
 	}
 
 	renderTab(tab) {
 		if (!tab.el) return;
 		tab.el.classList.toggle("active", tab === this.active);
 		tab.el.classList.toggle("dirty", this.isDirty(tab));
+		tab.el.classList.toggle("deleted", !!tab.deleted);
 	}
 
 	layout() {
